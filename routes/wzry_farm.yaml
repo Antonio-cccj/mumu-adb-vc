@@ -1,0 +1,94 @@
+name: wzry_farm
+mode: fixed_step
+scene_roi: [0, 80, 920, 560]
+stuck_after: 2
+max_stuck_attempts: 8
+
+joystick:
+  center: [184, 505]
+  distance: 72
+  duration_ms: 280
+  wait_ms: 0
+
+fixed_step:
+  direction: up_left
+  step_wait_ms: 8000
+  reset_after_ms: 300000
+
+success:
+  templates:
+    - wzry/one_key_farm.png
+    - wzry/one_key_farm_text.png
+  threshold: 0.78
+  roi: [560, 300, 560, 300]
+  wait_ms: 300
+
+interrupt:
+  templates:
+    - wzry/popup_close_top_right.png
+    - wzry/popup_close_white_x.png
+    - wzry/popup_close_blue_x.png
+  threshold: 0.80
+  roi: [850, 40, 420, 360]
+  wait_ms: 800
+
+reset:
+  templates:
+    - wzry/farm_reset_button.png
+  threshold: 0.70
+  roi: [1080, 560, 190, 150]
+  wait_ms: 3000
+
+recovery_moves:
+  - left
+  - up_left
+  - up
+  - right
+  - down_left
+
+keyframes:
+  - name: spawn
+    image: ../assets/routes/wzry_farm/01_spawn.png
+    move: up_left
+    correction_moves:
+      - left
+      - up
+      - up_left
+    min_score: 10
+
+  - name: before_move
+    image: ../assets/routes/wzry_farm/02_before_move.png
+    move: up_left
+    correction_moves:
+      - left
+      - up_left
+      - up
+    min_score: 10
+
+  - name: after_move
+    image: ../assets/routes/wzry_farm/03_after_move.png
+    move: left
+    correction_moves:
+      - up_left
+      - left
+      - down_left
+    min_score: 10
+
+  - name: left_edge
+    image: ../assets/routes/wzry_farm/04_left_edge.png
+    move: left
+    correction_moves:
+      - up_left
+      - left
+      - down_left
+    min_score: 10
+
+  - name: near_statue
+    image: ../assets/routes/wzry_farm/05_near_statue.png
+    move: stop
+    min_score: 10
+
+  - name: interaction
+    image: ../assets/routes/wzry_farm/06_interaction.png
+    move: stop
+    min_score: 10

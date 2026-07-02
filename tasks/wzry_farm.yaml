@@ -1,0 +1,279 @@
+start: go_home
+fallback: stop_failed
+max_steps: 90
+emergency_stop: false
+
+# 允许从当前画面接管：桌面、开始游戏、弹窗、大厅、农场、终点按钮都能识别后续流程。
+auto_detect_start: true
+auto_detect_timeout_ms: 30000
+entry_nodes:
+  - close_popups
+  - one_key_farm
+  - wait_farm_loaded
+  - find_farm_entry
+  - dismiss_reward_screen
+  - close_farm_popups
+  - return_to_lobby
+  - wait_game_loading
+  - start_game
+  - open_wzry
+
+# 单个节点循环过久时重新识别当前页面，防止卡在弹窗/加载/错误页面。
+stuck_recheck_after: 5
+stuck_recheck_nodes:
+  - close_popups
+  - one_key_farm
+  - wait_farm_loaded
+  - find_farm_entry
+  - dismiss_reward_screen
+  - close_farm_popups
+  - return_to_lobby
+  - wait_game_loading
+  - start_game
+  - open_wzry
+
+nodes:
+  - name: go_home
+    display_name: 回到安卓桌面
+    action: key_sequence
+    key_sequence:
+      - key: home
+        repeat: 1
+    next: open_wzry
+    timeout_ms: 1000
+    retry: 1
+    post_action_wait_ms: 1200
+
+  - name: open_wzry
+    display_name: 启动王者荣耀
+    roi: [0, 0, 1280, 720]
+    templates:
+      - wzry/launcher_icon.png
+      - wzry/launcher_label.png
+    threshold: 0.82
+    action: click
+    next: wait_game_loading
+    timeout_ms: 8000
+    retry: 4
+    on_fail: start_game
+    post_action_wait_ms: 6000
+
+  # 等待游戏初始加载完成（点击桌面图标后进入加载条界面）；
+  # 加载条模板可见时循环等待，不可见时（加载完成）跳转到点击开始游戏。
+  - name: wait_game_loading
+    display_name: 等待游戏加载
+    roi: [20, 600, 420, 110]
+    template: wzry/game_loading_status.png
+    threshold: 0.82
+    action: wait
+    wait_ms: 2000
+    next: wait_game_loading
+    timeout_ms: 5000
+    retry: 2
+    on_fail: start_game
+
+  - name: start_game
+    display_name: 点击开始游戏
+    roi: [260, 420, 760, 220]
+    templates:
+      - wzry/start_game.png
+    threshold: 0.82
+    action: click
+    next: close_popups
+    timeout_ms: 120000
+    retry: 60
+    on_fail: stop_failed
+    post_action_wait_ms: 5000
+
+  - name: close_popups
+    display_name: 关闭大厅弹窗
+    roi: [850, 40, 420, 360]
+    templates:
+      - wzry/popup_close_top_right.png
+      - wzry/popup_close_white_x.png
+      - wzry/popup_close_blue_x.png
+    threshold: 0.80
+    action: click
+    next: close_popups
+    timeout_ms: 1200
+    retry: 1
+    on_fail: find_farm_entry
+    post_action_wait_ms: 800
+
+  - name: return_to_lobby
+    display_name: 返回游戏主界面
+    roi: [0, 0, 140, 90]
+    template: wzry/subpage_back_button.png
+    threshold: 0.84
+    action: tap_point
+    point: [52, 36]
+    next: close_popups
+    timeout_ms: 2000
+    retry: 1
+    on_fail: close_popups
+    post_action_wait_ms: 1500
+
+  - name: find_farm_entry
+    display_name: 进入农场
+    roi: [150, 380, 560, 240]
+    templates:
+      - wzry/farm_entry_homestead.png
+      - wzry/farm_entry.png
+      - wzry/farm_entry_text.png
+      - wzry/farm_entry_current.png
+    threshold: 0.82
+    action: click
+    next: wait_farm_loading
+    timeout_ms: 8000
+    retry: 5
+    on_fail: close_popups
+    post_action_wait_ms: 3000
+
+  - name: wait_farm_loading
+    display_name: 等待农场加载页
+    action: wait
+    wait_ms: 3000
+    next: wait_farm_loaded
+    timeout_ms: 5000
+    retry: 1
+
+  - name: wait_farm_loaded
+    display_name: 确认已进入农场
+    roi: [0, 0, 1280, 720]
+    templates:
+      - wzry/farm_scene_anchor.png
+      - wzry/farm_warehouse_icon.png
+      - wzry/farm_social_icon.png
+      - wzry/farm_plant_text.png
+      - wzry/farm_baike_icon.png
+      - wzry/farm_back_icon.png
+    min_matches: 2
+    threshold: 0.80
+    action: wait
+    wait_ms: 500
+    next: close_farm_popups
+    timeout_ms: 180000
+    retry: 120
+    on_fail: close_popups
+
+  - name: close_farm_popups
+    display_name: 关闭农场内弹窗
+    roi: [850, 40, 420, 360]
+    templates:
+      - wzry/popup_close_top_right.png
+      - wzry/popup_close_white_x.png
+      - wzry/popup_close_blue_x.png
+    threshold: 0.80
+    action: click
+    next: close_farm_popups
+    timeout_ms: 1200
+    retry: 1
+    on_fail: move_to_farm_button
+    post_action_wait_ms: 800
+
+  - name: move_to_farm_button
+    display_name: 视觉路线导航到务农点
+    action: route_navigate
+    route:
+      path: routes/wzry_farm.yaml
+      max_attempts: 120
+    next: wait_for_harvest
+    timeout_ms: 1200000
+    retry: 1
+    post_action_wait_ms: 300
+
+  # 自然成熟收获时：已到按钮前，原地等待到成熟时刻再点击，避免成熟后被偷菜。
+  # 非自然成熟（浇水/终浇即收）或未注入成熟时刻时，本节点直接放行。
+  - name: wait_for_harvest
+    display_name: 等待作物成熟
+    action: wait_for_harvest
+    next: one_key_farm
+    timeout_ms: 86400000
+    retry: 1
+
+  - name: one_key_farm
+    display_name: 点击一键务农
+    roi: [650, 360, 360, 220]
+    templates:
+      - wzry/one_key_farm.png
+      - wzry/one_key_farm_text.png
+    threshold: 0.82
+    action: click
+    next: wait_after_one_key_farm
+    timeout_ms: 10000
+    retry: 6
+    on_fail: move_to_farm_button
+    post_action_wait_ms: 2000
+
+  - name: wait_after_one_key_farm
+    display_name: 等待务农完成
+    action: wait
+    wait_ms: 5000
+    next: dismiss_reward_screen
+    timeout_ms: 8000
+    retry: 1
+
+  - name: dismiss_reward_screen
+    display_name: 关闭务农收获页
+    roi: [420, 60, 460, 120]
+    templates:
+      - wzry/reward_title.png
+      - wzry/reward_title_current.png
+    threshold: 0.76
+    action: tap_point
+    point: [640, 620]
+    next: read_maturity_time
+    timeout_ms: 25000
+    retry: 25
+    on_fail: read_maturity_time
+    post_action_wait_ms: 1500
+    # 收获页有时延迟出现，需要较多重试等待；同时务农后农场界面可见，
+    # 禁用 stuck_recheck 防止误跳回 one_key_farm 重复务农。
+    no_stuck_recheck: true
+
+  - name: read_maturity_time
+    display_name: 读取作物成熟时间
+    action: read_maturity_time
+    maturity:
+      roi: [55, 250, 170, 80]
+      anchor_template: wzry/maturity_shovel_button.png
+      anchor_threshold: 0.64
+      anchor_roi: [0, 120, 280, 520]
+      tomorrow_template: wzry/maturity_tomorrow_prefix.png
+      tomorrow_threshold: 0.78
+      farm_templates:
+        - wzry/farm_scene_anchor.png
+        - wzry/farm_warehouse_icon.png
+        - wzry/farm_social_icon.png
+        - wzry/farm_plant_text.png
+        - wzry/farm_baike_icon.png
+        - wzry/farm_back_icon.png
+      farm_roi: [0, 0, 1280, 720]
+      # 务农后互动菜单可能遮挡部分锚点；只需1个农场UI元素匹配即可确认在农场。
+      farm_threshold: 0.78
+      farm_min_matches: 1
+      joystick_center: [184, 505]
+      direction: up_left
+      distance: 72
+      duration_ms: 280
+      step_wait_ms: 8000
+      max_attempts: 60
+    next: stop_success
+    # 仅当确认不在农场（收获页仍挡住）时才回退到 dismiss_reward_screen；
+    # dismiss_reward_screen 已设 no_stuck_recheck=true，不会再误跳回 one_key_farm。
+    on_fail: dismiss_reward_screen
+    timeout_ms: 600000
+    retry: 1
+
+  - name: stop_success
+    display_name: 完成
+    action: stop
+    timeout_ms: 1000
+    retry: 1
+
+  - name: stop_failed
+    display_name: 失败停止
+    action: stop
+    terminal_status: failed
+    timeout_ms: 1000
+    retry: 1

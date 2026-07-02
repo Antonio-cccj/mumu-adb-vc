@@ -1,0 +1,27 @@
+start: harvest_candidates
+fallback: stop_harvest
+max_steps: 30
+emergency_stop: false
+
+nodes:
+  - name: harvest_candidates
+    roi: [0, 0, 1280, 720]
+    templates:
+      # Put only user-captured templates here. Do not add third-party assets to the repo.
+      - wzry/claim.png
+      - wzry/claim_all.png
+      - wzry/receive.png
+      - wzry/confirm.png
+      - wzry/close.png
+    threshold: 0.84
+    action: click
+    next: harvest_candidates
+    timeout_ms: 1500
+    retry: 1
+    on_fail: stop_harvest
+    post_action_wait_ms: 800
+
+  - name: stop_harvest
+    action: stop
+    timeout_ms: 1000
+    retry: 1

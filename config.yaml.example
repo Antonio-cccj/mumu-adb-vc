@@ -1,0 +1,42 @@
+# 复制本文件为 config.yaml，并填入你本机的实际路径与配置。
+# Copy this file to config.yaml and fill in your local paths.
+
+# MuMu 模拟器 ADB 可执行文件路径（MuMu Player 12 默认路径）
+adb_path: 'C:\Program Files\NetEase\MuMu Player 12\nx_device\12.0\shell\adb.exe'
+
+# ADB 设备连接地址（MuMu Player 12 默认端口 16384）
+device_serial: "127.0.0.1:16384"
+
+# MuMu 模拟器主程序路径（自动启动功能需要）
+emulator_path: 'C:\Program Files\NetEase\MuMu Player 12\nx_main\MuMuNxMain.exe'
+
+# 启动时若模拟器未运行，是否自动启动（true/false）
+auto_launch_emulator: true
+
+# 等待模拟器启动的超时秒数
+emulator_launch_timeout_sec: 90
+
+# OCR 识别使用的分辨率（建议与模拟器分辨率一致）
+recognition_width: 1280
+recognition_height: 720
+
+# ADB 截图间隔毫秒数
+screenshot_interval_ms: 1000
+
+# 调试截图输出目录
+debug_dir: debug
+
+# 日志输出目录
+log_dir: logs
+
+# 图片模板目录
+template_dir: assets/templates
+
+# ADB 命令超时秒数
+command_timeout_sec: 10
+
+# 王者荣耀游戏包名
+game_package: com.tencent.tmgp.sgame
+
+# 任务完成后是否关闭游戏
+close_game_after_run: true

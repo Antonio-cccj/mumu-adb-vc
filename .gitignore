@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+
+# 构建产物
+build/
+dist/
+dist_*/
+release/
+
+# 运行时生成目录
+debug/
+logs/
+
+# 本机设备配置（含 ADB 路径等私有信息，请使用 config.yaml.example 作为模板）
+config.yaml
