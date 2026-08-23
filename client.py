@@ -29,6 +29,7 @@ from settings import AppConfig, load_config
 from task_engine import TaskEngine, load_task_definition
 from task_preflight import format_missing_template_groups, missing_template_groups
 from template_capture import CAPTURE_STAGES, capture_recognition_source, stage_id_from_display
+from time_utils import beijing_now
 from vision import resize_to_recognition
 
 
@@ -564,7 +565,7 @@ class AutomationClient(Tk):
     def clear_debug_cache(self) -> None:
         result = clear_screenshot_cache(self.config_model.debug_dir)
         message = f"已清理截图缓存：{result.removed_files} 个文件，释放 {_bytes_text(result.removed_bytes)}"
-        self._append_log_line(f"{datetime.now().strftime('%H:%M:%S')} {message}", tag="success")
+        self._append_log_line(f"{beijing_now().strftime('%H:%M:%S')} {message}", tag="success")
         self.status.set("缓存已清理")
 
     def apply_custom_schedule(self) -> None:
@@ -614,7 +615,7 @@ class AutomationClient(Tk):
             ensure_emulator_ready(config=runtime_config, adb=adb, events=recorder)
             # 自然成熟收获：上一轮调度记录了目标成熟时刻，本轮到达按钮后等到点再收获，规避偷菜。
             harvest_wait_until = _coerce_datetime(self.client_state.get("crop_harvest_at"))
-            if harvest_wait_until is not None and harvest_wait_until > datetime.now():
+            if harvest_wait_until is not None and harvest_wait_until > beijing_now():
                 recorder.emit(
                     "INFO",
                     "run",
@@ -650,7 +651,7 @@ class AutomationClient(Tk):
                         "run_completed",
                         {
                             "maturity_time": maturity_time["value"],
-                            "finished_at": datetime.now(),
+                            "finished_at": beijing_now(),
                         },
                     )
                 )
@@ -691,7 +692,7 @@ class AutomationClient(Tk):
             output_dir = Path(config.debug_dir) / "failure_snapshots"
             output_dir.mkdir(parents=True, exist_ok=True)
             safe_reason = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in reason)
-            output = output_dir / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}_{safe_reason}.png"
+            output = output_dir / f"{beijing_now().strftime('%Y%m%d-%H%M%S')}_{safe_reason}.png"
             cv2.imwrite(str(output), snapshot)
         except Exception as exc:
             recorder.emit("WARN", "snapshot", f"保存失败快照失败：{exc}")
@@ -815,7 +816,7 @@ class AutomationClient(Tk):
         if not isinstance(maturity_time, str):
             maturity_time = None
         finished_at = payload.get("finished_at")
-        now = finished_at if isinstance(finished_at, datetime) else datetime.now()
+        now = finished_at if isinstance(finished_at, datetime) else beijing_now()
         self._append_crop_optimization_report(now=now, maturity_time=maturity_time)
         self._update_crop_schedule_state(now=now, maturity_time=maturity_time)
         if not self.schedule_enabled.get():
@@ -831,7 +832,7 @@ class AutomationClient(Tk):
             self.next_run_at = fallback_plan.next_run
             message = f"下次定时启动：{fallback_plan.next_run.strftime('%Y-%m-%d %H:%M')}"
             self.schedule_status.set(message)
-            self._append_log_line(f"{datetime.now().strftime('%H:%M:%S')} {message}", tag="warning")
+            self._append_log_line(f"{beijing_now().strftime('%H:%M:%S')} {message}", tag="warning")
             return
         self.next_run_at = crop_plan.next_run
         message = (
@@ -839,7 +840,7 @@ class AutomationClient(Tk):
             f"（{crop_plan.crop_hours}h作物，{_duration_text(crop_plan.interval)}后）"
         )
         self.schedule_status.set(message)
-        self._append_log_line(f"{datetime.now().strftime('%H:%M:%S')} {message}", tag="success")
+        self._append_log_line(f"{beijing_now().strftime('%H:%M:%S')} {message}", tag="success")
 
     def _append_crop_optimization_report(self, *, now: datetime, maturity_time: str | None) -> None:
         try:
@@ -853,10 +854,10 @@ class AutomationClient(Tk):
                 ),
             )
         except ValueError as exc:
-            self._append_log_line(f"{datetime.now().strftime('%H:%M:%S')} 浇水最优解计算失败：{exc}", tag="warning")
+            self._append_log_line(f"{beijing_now().strftime('%H:%M:%S')} 浇水最优解计算失败：{exc}", tag="warning")
             return
         report = format_crop_optimization_report(plan)
-        prefix = datetime.now().strftime("%H:%M:%S")
+        prefix = beijing_now().strftime("%H:%M:%S")
         for index, line in enumerate(report.splitlines()):
             self._append_log_line(f"{prefix} {line}" if index == 0 else f"         {line}", tag="success")
 
@@ -897,12 +898,12 @@ class AutomationClient(Tk):
         if not start_time:
             return False
         try:
-            plan = compute_manual_next_run(now=datetime.now(), start_time=start_time)
+            plan = compute_manual_next_run(now=beijing_now(), start_time=start_time)
         except ValueError:
             message = "自定义启动时间格式错误，请使用 HH:MM"
             if show_error:
                 self.schedule_status.set(message)
-                self._append_log_line(f"{datetime.now().strftime('%H:%M:%S')} {message}", tag="warning")
+                self._append_log_line(f"{beijing_now().strftime('%H:%M:%S')} {message}", tag="warning")
                 messagebox.showwarning("下次启动时间", message)
             return False
         self.next_run_at = plan.next_run
@@ -910,7 +911,7 @@ class AutomationClient(Tk):
         save_client_state(self.client_state)
         message = f"下次定时启动：{plan.next_run.strftime('%Y-%m-%d %H:%M')}（手动）"
         self.schedule_status.set(message)
-        self._append_log_line(f"{datetime.now().strftime('%H:%M:%S')} {message}", tag="success")
+        self._append_log_line(f"{beijing_now().strftime('%H:%M:%S')} {message}", tag="success")
         return True
 
     def _poll_schedule(self) -> None:
@@ -920,7 +921,7 @@ class AutomationClient(Tk):
             if self.client_state.pop(MANUAL_NEXT_RUN_STATE_KEY, None) is not None:
                 save_client_state(self.client_state)
         else:
-            now = datetime.now()
+            now = beijing_now()
             worker_alive = bool(self.worker and self.worker.is_alive())
             if self.next_run_at is None:
                 persisted = _coerce_datetime(self.client_state.get(MANUAL_NEXT_RUN_STATE_KEY))

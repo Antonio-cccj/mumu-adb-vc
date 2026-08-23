@@ -9,6 +9,7 @@ from navigation.route_config import load_navigation_route
 from task_engine import TaskEngine
 from task_engine import TaskDefinition, load_task_definition
 from runtime_events import EventHub
+from time_utils import beijing_now
 from vision import MatchResult, Point, RecognitionSize, Rect, match_template
 
 
@@ -338,14 +339,27 @@ def test_wzry_farm_task_file_is_valid():
     assert task.start == "go_home"
     assert task.auto_detect_start is True
     assert task.auto_detect_timeout_ms >= 30000
+    assert "wait_farm_loading" in task.entry_nodes
     assert "wait_game_loading" in task.entry_nodes
     assert "return_to_lobby" in task.entry_nodes
     assert task.entry_nodes.index("return_to_lobby") < task.entry_nodes.index("open_wzry")
     assert task.stuck_recheck_after == 5
+    assert "wait_farm_loading" in task.stuck_recheck_nodes
     assert "wait_game_loading" in task.stuck_recheck_nodes
     assert "return_to_lobby" in task.stuck_recheck_nodes
     assert task.nodes_by_name["open_wzry"].templates
+    assert task.nodes_by_name["go_home"].next == "close_mumu_ad"
+    assert "close_mumu_ad" in task.entry_nodes
+    assert task.entry_nodes.index("close_mumu_ad") < task.entry_nodes.index("open_wzry")
+    assert "close_mumu_ad" in task.stuck_recheck_nodes
+    assert task.stuck_recheck_nodes.index("close_mumu_ad") < task.stuck_recheck_nodes.index("open_wzry")
+    mumu_ad_node = task.nodes_by_name["close_mumu_ad"]
+    assert mumu_ad_node.action == "click"
+    assert mumu_ad_node.next == "open_wzry"
+    assert mumu_ad_node.on_fail == "open_wzry"
+    assert "wzry/mumu_ad_close.png" in mumu_ad_node.template_names()
     assert task.nodes_by_name["start_game"].timeout_ms >= 120000
+    assert "wzry/start_game_202608.png" in task.nodes_by_name["start_game"].template_names()
     # 正确流程：open_wzry → wait_game_loading（初始加载）→ start_game → close_popups。
     # 等待游戏加载在点击"开始游戏"之前，而非之后。
     assert task.nodes_by_name["open_wzry"].next == "wait_game_loading"
@@ -362,16 +376,26 @@ def test_wzry_farm_task_file_is_valid():
     assert return_node.point == [52, 36]
     assert return_node.next == "close_popups"
     assert task.nodes_by_name["close_popups"].on_fail == "find_farm_entry"
+    assert "wzry/popup_close_duckyo_x.png" in task.nodes_by_name["close_popups"].template_names()
     assert "wzry/farm_entry_homestead.png" in task.nodes_by_name["find_farm_entry"].templates
     assert "wzry/farm_entry_current.png" in task.nodes_by_name["find_farm_entry"].templates
+    assert "wzry/farm_entry_202608.png" in task.nodes_by_name["find_farm_entry"].templates
+    assert "wzry/farm_entry_lobby_20260810.png" in task.nodes_by_name["find_farm_entry"].templates
+    assert "wzry/farm_entry_lobby_text_20260810.png" in task.nodes_by_name["find_farm_entry"].templates
     assert task.nodes_by_name["find_farm_entry"].next == "wait_farm_loading"
-    assert task.nodes_by_name["wait_farm_loading"].next == "wait_farm_loaded"
+    farm_loading_node = task.nodes_by_name["wait_farm_loading"]
+    assert farm_loading_node.next == "wait_farm_loading"
+    assert farm_loading_node.on_fail == "wait_farm_loaded"
+    assert farm_loading_node.wait_ms >= 5000
+    assert farm_loading_node.no_stuck_recheck is True
+    assert "wzry/farm_loading_room_202608.png" in farm_loading_node.template_names()
     assert task.nodes_by_name["wait_farm_loaded"].min_matches == 2
     assert task.nodes_by_name["wait_farm_loaded"].next == "close_farm_popups"
-    assert task.nodes_by_name["wait_farm_loaded"].timeout_ms >= 120000
+    assert task.nodes_by_name["wait_farm_loaded"].timeout_ms >= 300000
     farm_popup_node = task.nodes_by_name["close_farm_popups"]
     assert farm_popup_node.action == "click"
     assert farm_popup_node.on_fail == "move_to_farm_button"
+    assert "wzry/popup_close_duckyo_x.png" in farm_popup_node.template_names()
     route_node = task.nodes_by_name["move_to_farm_button"]
     assert route_node.action == "route_navigate"
     assert route_node.route is not None
@@ -442,6 +466,35 @@ def test_wzry_reward_screen_matches_current_reward_page_fixture():
     assert node.point == [640, 620]
 
 
+def test_wzry_popup_close_matches_duckyo_fixture():
+    project_root = Path(__file__).parents[1]
+    task = load_task_definition(project_root / "tasks" / "wzry_farm.yaml")
+    fixture = cv2.imread(str(project_root / "tests" / "fixtures" / "wzry_popup_duckyo_close.png"), cv2.IMREAD_COLOR)
+    assert fixture is not None
+
+    actual_size = RecognitionSize(width=fixture.shape[1], height=fixture.shape[0])
+    template_dir = project_root / "assets" / "templates"
+    for node_name in ("close_popups", "close_farm_popups"):
+        node = task.nodes_by_name[node_name]
+        results = []
+        for template_name in node.template_names():
+            template = cv2.imread(str(template_dir / template_name), cv2.IMREAD_COLOR)
+            assert template is not None, template_name
+            results.append(
+                match_template(
+                    fixture,
+                    template,
+                    threshold=node.threshold,
+                    roi=Rect.from_sequence(node.roi),
+                    recognition_size=RecognitionSize(width=1280, height=720),
+                    actual_size=actual_size,
+                )
+            )
+
+        assert any(result.found for result in results), node_name
+        assert node.action == "click"
+
+
 def test_wzry_farm_entry_matches_current_lobby_fixture():
     project_root = Path(__file__).parents[1]
     task = load_task_definition(project_root / "tasks" / "wzry_farm.yaml")
@@ -468,6 +521,151 @@ def test_wzry_farm_entry_matches_current_lobby_fixture():
 
     assert any(result.found for result in results)
     assert node.action == "click"
+
+
+def test_wzry_farm_entry_matches_202608_lobby_fixture():
+    project_root = Path(__file__).parents[1]
+    task = load_task_definition(project_root / "tasks" / "wzry_farm.yaml")
+    node = task.nodes_by_name["find_farm_entry"]
+    fixture = cv2.imread(str(project_root / "tests" / "fixtures" / "wzry_farm_entry_202608.png"), cv2.IMREAD_COLOR)
+    assert fixture is not None
+
+    actual_size = RecognitionSize(width=fixture.shape[1], height=fixture.shape[0])
+    template_dir = project_root / "assets" / "templates"
+    results = []
+    for template_name in node.template_names():
+        template = cv2.imread(str(template_dir / template_name), cv2.IMREAD_COLOR)
+        assert template is not None, template_name
+        results.append(
+            match_template(
+                fixture,
+                template,
+                threshold=node.threshold,
+                roi=Rect.from_sequence(node.roi),
+                recognition_size=RecognitionSize(width=1280, height=720),
+                actual_size=actual_size,
+            )
+        )
+
+    assert any(result.found for result in results)
+    assert node.action == "click"
+
+
+def test_wzry_farm_entry_matches_20260810_lobby_fixture_with_high_confidence():
+    project_root = Path(__file__).parents[1]
+    task = load_task_definition(project_root / "tasks" / "wzry_farm.yaml")
+    node = task.nodes_by_name["find_farm_entry"]
+    fixture = cv2.imread(str(project_root / "tests" / "fixtures" / "wzry_farm_entry_lobby_20260810.png"), cv2.IMREAD_COLOR)
+    assert fixture is not None
+
+    actual_size = RecognitionSize(width=fixture.shape[1], height=fixture.shape[0])
+    template_dir = project_root / "assets" / "templates"
+    results = []
+    for template_name in node.template_names():
+        template = cv2.imread(str(template_dir / template_name), cv2.IMREAD_COLOR)
+        assert template is not None, template_name
+        results.append(
+            match_template(
+                fixture,
+                template,
+                threshold=node.threshold,
+                roi=Rect.from_sequence(node.roi),
+                recognition_size=RecognitionSize(width=1280, height=720),
+                actual_size=actual_size,
+            )
+        )
+
+    best = max(results, key=lambda result: result.score)
+    assert best.found
+    assert best.score >= 0.95
+    assert node.action == "click"
+
+
+def test_wzry_farm_loading_screen_keeps_waiting_instead_of_failing_fast():
+    project_root = Path(__file__).parents[1]
+    task = load_task_definition(project_root / "tasks" / "wzry_farm.yaml")
+    node = task.nodes_by_name["wait_farm_loading"]
+    fixture = cv2.imread(str(project_root / "tests" / "fixtures" / "wzry_farm_loading_room_202608.png"), cv2.IMREAD_COLOR)
+    assert fixture is not None
+
+    actual_size = RecognitionSize(width=fixture.shape[1], height=fixture.shape[0])
+    template_dir = project_root / "assets" / "templates"
+    results = []
+    for template_name in node.template_names():
+        template = cv2.imread(str(template_dir / template_name), cv2.IMREAD_COLOR)
+        assert template is not None, template_name
+        results.append(
+            match_template(
+                fixture,
+                template,
+                threshold=node.threshold,
+                roi=Rect.from_sequence(node.roi),
+                recognition_size=RecognitionSize(width=1280, height=720),
+                actual_size=actual_size,
+            )
+        )
+
+    best = max(results, key=lambda result: result.score)
+    assert best.found
+    assert node.action == "wait"
+    assert node.next == "wait_farm_loading"
+    assert node.on_fail == "wait_farm_loaded"
+
+
+def test_wzry_start_game_matches_202608_fixture():
+    project_root = Path(__file__).parents[1]
+    task = load_task_definition(project_root / "tasks" / "wzry_farm.yaml")
+    node = task.nodes_by_name["start_game"]
+    fixture = cv2.imread(str(project_root / "tests" / "fixtures" / "wzry_start_game_202608.png"), cv2.IMREAD_COLOR)
+    assert fixture is not None
+
+    actual_size = RecognitionSize(width=fixture.shape[1], height=fixture.shape[0])
+    template_dir = project_root / "assets" / "templates"
+    results = []
+    for template_name in node.template_names():
+        template = cv2.imread(str(template_dir / template_name), cv2.IMREAD_COLOR)
+        assert template is not None, template_name
+        results.append(
+            match_template(
+                fixture,
+                template,
+                threshold=node.threshold,
+                roi=Rect.from_sequence(node.roi),
+                recognition_size=RecognitionSize(width=1280, height=720),
+                actual_size=actual_size,
+            )
+        )
+
+    assert any(result.found for result in results)
+    assert node.action == "click"
+
+
+def test_mumu_launcher_ad_close_matches_current_fixture():
+    project_root = Path(__file__).parents[1]
+    task = load_task_definition(project_root / "tasks" / "wzry_farm.yaml")
+    node = task.nodes_by_name["close_mumu_ad"]
+    fixture = cv2.imread(str(project_root / "tests" / "fixtures" / "mumu_launcher_ad.png"), cv2.IMREAD_COLOR)
+    assert fixture is not None
+
+    actual_size = RecognitionSize(width=fixture.shape[1], height=fixture.shape[0])
+    template_dir = project_root / "assets" / "templates"
+    results = []
+    for template_name in node.template_names():
+        template = cv2.imread(str(template_dir / template_name), cv2.IMREAD_COLOR)
+        assert template is not None, template_name
+        results.append(
+            match_template(
+                fixture,
+                template,
+                threshold=node.threshold,
+                roi=Rect.from_sequence(node.roi),
+                recognition_size=RecognitionSize(width=1280, height=720),
+                actual_size=actual_size,
+            )
+        )
+
+    assert any(result.found for result in results)
+    assert node.next == "open_wzry"
 
 
 def test_task_engine_dry_run_completes_without_sending_tap(tmp_path: Path):
@@ -681,7 +879,7 @@ def test_task_engine_rechecks_state_during_repeated_template_attempts(tmp_path: 
                     "action": "wait",
                     "wait_ms": 1,
                     "retry": 10,
-                    "timeout_ms": 1000,
+                    "timeout_ms": 5000,
                     "on_fail": "stop_failed",
                 },
                 {
@@ -1650,7 +1848,7 @@ def test_wait_for_harvest_skips_when_target_in_past(tmp_path: Path):
         adb=FakeAdb(),  # type: ignore[arg-type]
         config=AppConfig(debug_dir=tmp_path / "debug"),
         task=_build_wait_for_harvest_task(),
-        harvest_wait_until=datetime.now() - timedelta(minutes=1),
+        harvest_wait_until=beijing_now() - timedelta(minutes=1),
     )
 
     started = _time.perf_counter()
@@ -1677,7 +1875,7 @@ def test_wait_for_harvest_waits_until_future_target(tmp_path: Path):
         config=AppConfig(debug_dir=tmp_path / "debug"),
         task=_build_wait_for_harvest_task(),
         events=hub,
-        harvest_wait_until=datetime.now() + timedelta(milliseconds=400),
+        harvest_wait_until=beijing_now() + timedelta(milliseconds=400),
     )
 
     started = _time.perf_counter()

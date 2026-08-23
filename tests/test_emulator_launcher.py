@@ -39,7 +39,7 @@ def test_launcher_command_uses_mumu_manager_when_available(tmp_path: Path):
     main_executable.write_bytes(b"exe")
     manager.write_bytes(b"exe")
 
-    assert launcher_command(main_executable) == [str(manager), "api", "-v", "0", "launch_player"]
+    assert launcher_command(main_executable) == [str(manager), "api", "-v", "1", "launch_player"]
 
 
 def test_ensure_emulator_ready_does_not_launch_when_adb_probe_succeeds():

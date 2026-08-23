@@ -9,6 +9,7 @@ auto_detect_timeout_ms: 30000
 entry_nodes:
   - close_popups
   - one_key_farm
+  - wait_farm_loading
   - wait_farm_loaded
   - find_farm_entry
   - dismiss_reward_screen
@@ -16,6 +17,7 @@ entry_nodes:
   - return_to_lobby
   - wait_game_loading
   - start_game
+  - close_mumu_ad
   - open_wzry
 
 # 单个节点循环过久时重新识别当前页面，防止卡在弹窗/加载/错误页面。
@@ -23,6 +25,7 @@ stuck_recheck_after: 5
 stuck_recheck_nodes:
   - close_popups
   - one_key_farm
+  - wait_farm_loading
   - wait_farm_loaded
   - find_farm_entry
   - dismiss_reward_screen
@@ -30,6 +33,7 @@ stuck_recheck_nodes:
   - return_to_lobby
   - wait_game_loading
   - start_game
+  - close_mumu_ad
   - open_wzry
 
 nodes:
@@ -39,9 +43,22 @@ nodes:
     key_sequence:
       - key: home
         repeat: 1
-    next: open_wzry
+    next: close_mumu_ad
     timeout_ms: 1000
     retry: 1
+    post_action_wait_ms: 1200
+
+  - name: close_mumu_ad
+    display_name: 关闭MuMu广告
+    roi: [1000, 70, 160, 90]
+    templates:
+      - wzry/mumu_ad_close.png
+    threshold: 0.82
+    action: click
+    next: open_wzry
+    timeout_ms: 4000
+    retry: 3
+    on_fail: open_wzry
     post_action_wait_ms: 1200
 
   - name: open_wzry
@@ -77,6 +94,7 @@ nodes:
     roi: [260, 420, 760, 220]
     templates:
       - wzry/start_game.png
+      - wzry/start_game_202608.png
     threshold: 0.82
     action: click
     next: close_popups
@@ -92,6 +110,7 @@ nodes:
       - wzry/popup_close_top_right.png
       - wzry/popup_close_white_x.png
       - wzry/popup_close_blue_x.png
+      - wzry/popup_close_duckyo_x.png
     threshold: 0.80
     action: click
     next: close_popups
@@ -121,6 +140,9 @@ nodes:
       - wzry/farm_entry.png
       - wzry/farm_entry_text.png
       - wzry/farm_entry_current.png
+      - wzry/farm_entry_202608.png
+      - wzry/farm_entry_lobby_20260810.png
+      - wzry/farm_entry_lobby_text_20260810.png
     threshold: 0.82
     action: click
     next: wait_farm_loading
@@ -131,11 +153,17 @@ nodes:
 
   - name: wait_farm_loading
     display_name: 等待农场加载页
+    roi: [0, 500, 800, 220]
+    templates:
+      - wzry/farm_loading_room_202608.png
+    threshold: 0.78
     action: wait
-    wait_ms: 3000
-    next: wait_farm_loaded
-    timeout_ms: 5000
+    wait_ms: 5000
+    next: wait_farm_loading
+    timeout_ms: 8000
     retry: 1
+    on_fail: wait_farm_loaded
+    no_stuck_recheck: true
 
   - name: wait_farm_loaded
     display_name: 确认已进入农场
@@ -152,8 +180,8 @@ nodes:
     action: wait
     wait_ms: 500
     next: close_farm_popups
-    timeout_ms: 180000
-    retry: 120
+    timeout_ms: 420000
+    retry: 420
     on_fail: close_popups
 
   - name: close_farm_popups
@@ -163,6 +191,7 @@ nodes:
       - wzry/popup_close_top_right.png
       - wzry/popup_close_white_x.png
       - wzry/popup_close_blue_x.png
+      - wzry/popup_close_duckyo_x.png
     threshold: 0.80
     action: click
     next: close_farm_popups

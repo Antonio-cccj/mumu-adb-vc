@@ -19,6 +19,7 @@ from navigation.route_config import load_navigation_route
 from navigation.route_navigator import NavigationCallbacks, RouteNavigator
 from runtime_events import EventHub
 from settings import AppConfig
+from time_utils import beijing_now
 from vision import MatchResult, Point, RecognitionSize, Rect, crop_roi, map_point_to_screen, match_template, resize_to_recognition
 
 
@@ -1083,7 +1084,7 @@ class TaskEngine:
             self._emit("INFO", "action", "无需提前等待，直接点击", node=node.name, action="wait_for_harvest")
             return "success"
 
-        wait_seconds = (target - datetime.now()).total_seconds()
+        wait_seconds = (target - beijing_now()).total_seconds()
         if wait_seconds <= 0:
             # 已到/已过成熟时刻：立刻收获即可。
             self._emit(
@@ -1198,7 +1199,7 @@ class TaskEngine:
                     recognition = resize_to_recognition(screenshot, self.config.recognition_size)
                     card_dir = Path(self.config.debug_dir) / "card_snapshots"
                     card_dir.mkdir(parents=True, exist_ok=True)
-                    card_path = card_dir / f"{datetime.now().strftime('%Y%m%d-%H%M%S')}_card.png"
+                    card_path = card_dir / f"{beijing_now().strftime('%Y%m%d-%H%M%S')}_card.png"
                     cv2.imwrite(str(card_path), recognition)
                     card_snapshot_str = str(card_path.resolve())
                 except Exception as snap_exc:

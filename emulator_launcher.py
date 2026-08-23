@@ -88,7 +88,7 @@ def launch_emulator(executable: Path) -> subprocess.Popen[bytes]:
 def launcher_command(executable: Path) -> list[str]:
     manager = executable if executable.name.lower() == "mumumanager.exe" else executable.parent / "MuMuManager.exe"
     if manager.is_file():
-        return [str(manager), "api", "-v", "0", "launch_player"]
+        return [str(manager), "api", "-v", "1", "launch_player"]
     return [str(executable)]
 
 

@@ -8,6 +8,8 @@ from pathlib import Path
 from threading import Lock
 from typing import Any, Callable
 
+from time_utils import beijing_now
+
 
 class EventLevel(StrEnum):
     TRACE = "TRACE"
@@ -22,7 +24,7 @@ class RunEvent:
     level: EventLevel
     category: str
     message: str
-    timestamp: datetime = field(default_factory=datetime.now)
+    timestamp: datetime = field(default_factory=beijing_now)
     node: str | None = None
     template: str | None = None
     score: float | None = None
@@ -99,7 +101,7 @@ class EventHub:
 class RunEventRecorder(EventHub):
     def __init__(self, *, log_dir: str | Path = "logs", run_name: str = "run") -> None:
         super().__init__()
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        timestamp = beijing_now().strftime("%Y%m%d-%H%M%S")
         safe_run_name = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in run_name)
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
