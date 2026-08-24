@@ -26,7 +26,7 @@ from run_scheduler import (
     remaining_until_clock_time,
 )
 from settings import AppConfig, load_config
-from task_engine import TaskEngine, load_task_definition
+from task_engine import EngineRunResult, TaskDefinition, TaskEngine, load_task_definition
 from task_preflight import format_missing_template_groups, missing_template_groups
 from template_capture import CAPTURE_STAGES, capture_recognition_source, stage_id_from_display
 from time_utils import beijing_now
@@ -149,6 +149,21 @@ def should_trigger_schedule(
     worker_alive: bool,
 ) -> bool:
     return next_run_at is not None and now >= next_run_at and not worker_alive
+
+
+def should_close_game_after_run(
+    *,
+    config: AppConfig,
+    task: TaskDefinition | None,
+    result: EngineRunResult | None,
+) -> bool:
+    if not config.close_game_after_run:
+        return False
+    if task is not None and result is not None and result.last_node:
+        node = task.nodes_by_name.get(result.last_node)
+        if node is not None and node.keep_game_open_after_run:
+            return False
+    return True
 
 
 class AutomationClient(Tk):
@@ -580,6 +595,8 @@ class AutomationClient(Tk):
         maturity_time: dict[str, str | None] = {"value": None}
         runtime_config: AppConfig | None = None
         adb: AdbController | None = None
+        task: TaskDefinition | None = None
+        result: EngineRunResult | None = None
 
         def handle_event(event: RunEvent) -> None:
             if event.category == "maturity":
@@ -665,8 +682,16 @@ class AutomationClient(Tk):
                     reason="exception",
                 )
         finally:
-            if adb is not None and runtime_config is not None and runtime_config.close_game_after_run:
+            if (
+                adb is not None
+                and runtime_config is not None
+                and should_close_game_after_run(config=runtime_config, task=task, result=result)
+            ):
                 self._close_game_after_run(adb=adb, config=runtime_config, recorder=recorder)
+            elif adb is not None and runtime_config is not None and result is not None and result.last_node:
+                node = task.nodes_by_name.get(result.last_node) if task is not None else None
+                if node is not None and node.keep_game_open_after_run:
+                    recorder.emit("INFO", "emulator", "已按弹窗要求停止脚本，保留王者荣耀运行")
             if runtime_config is not None:
                 cleanup = clear_screenshot_cache(runtime_config.debug_dir)
                 if cleanup.removed_files:

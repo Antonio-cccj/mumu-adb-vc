@@ -49,7 +49,9 @@ class FixedStepRoute(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     direction: JoystickDirection = "up_left"
-    step_wait_ms: int = Field(default=8000, ge=8000)
+    step_wait_ms: int = Field(default=1800, ge=0)
+    settle_wait_ms: int = Field(default=500, ge=0)
+    success_poll_interval_ms: int = Field(default=500, ge=1)
     reset_after_ms: int = Field(default=300000, ge=1)
 
 

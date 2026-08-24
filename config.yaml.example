@@ -21,7 +21,7 @@ recognition_width: 1280
 recognition_height: 720
 
 # ADB 截图间隔毫秒数
-screenshot_interval_ms: 1000
+screenshot_interval_ms: 500
 
 # 调试截图输出目录
 debug_dir: debug

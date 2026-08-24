@@ -339,11 +339,19 @@ def test_wzry_farm_task_file_is_valid():
     assert task.start == "go_home"
     assert task.auto_detect_start is True
     assert task.auto_detect_timeout_ms >= 30000
+    assert "confirm_resource_update_restart" in task.entry_nodes
+    assert "confirm_agreement_stop" in task.entry_nodes
+    assert task.entry_nodes.index("confirm_resource_update_restart") < task.entry_nodes.index("close_popups")
+    assert task.entry_nodes.index("confirm_agreement_stop") < task.entry_nodes.index("close_popups")
     assert "wait_farm_loading" in task.entry_nodes
     assert "wait_game_loading" in task.entry_nodes
     assert "return_to_lobby" in task.entry_nodes
     assert task.entry_nodes.index("return_to_lobby") < task.entry_nodes.index("open_wzry")
     assert task.stuck_recheck_after == 5
+    assert "confirm_resource_update_restart" in task.stuck_recheck_nodes
+    assert "confirm_agreement_stop" in task.stuck_recheck_nodes
+    assert task.stuck_recheck_nodes.index("confirm_resource_update_restart") < task.stuck_recheck_nodes.index("close_popups")
+    assert task.stuck_recheck_nodes.index("confirm_agreement_stop") < task.stuck_recheck_nodes.index("close_popups")
     assert "wait_farm_loading" in task.stuck_recheck_nodes
     assert "wait_game_loading" in task.stuck_recheck_nodes
     assert "return_to_lobby" in task.stuck_recheck_nodes
@@ -375,8 +383,24 @@ def test_wzry_farm_task_file_is_valid():
     assert return_node.action == "tap_point"
     assert return_node.point == [52, 36]
     assert return_node.next == "close_popups"
-    assert task.nodes_by_name["close_popups"].on_fail == "find_farm_entry"
+    assert task.nodes_by_name["close_popups"].on_fail == "confirm_resource_update_restart"
     assert "wzry/popup_close_duckyo_x.png" in task.nodes_by_name["close_popups"].template_names()
+    resource_update_node = task.nodes_by_name["confirm_resource_update_restart"]
+    assert resource_update_node.action == "tap_point"
+    assert resource_update_node.template == "wzry/resource_update_confirm_dialog.png"
+    assert resource_update_node.point == [632, 510]
+    assert resource_update_node.next == "wait_game_loading"
+    assert resource_update_node.on_fail == "confirm_agreement_stop"
+    agreement_node = task.nodes_by_name["confirm_agreement_stop"]
+    assert agreement_node.action == "tap_point"
+    assert agreement_node.template == "wzry/agreement_confirm_dialog.png"
+    assert agreement_node.point == [765, 565]
+    assert agreement_node.next == "stop_keep_game_open"
+    assert agreement_node.on_fail == "find_farm_entry"
+    stop_keep_game_node = task.nodes_by_name["stop_keep_game_open"]
+    assert stop_keep_game_node.action == "stop"
+    assert stop_keep_game_node.terminal_status == "stopped"
+    assert stop_keep_game_node.keep_game_open_after_run is True
     assert "wzry/farm_entry_homestead.png" in task.nodes_by_name["find_farm_entry"].templates
     assert "wzry/farm_entry_current.png" in task.nodes_by_name["find_farm_entry"].templates
     assert "wzry/farm_entry_202608.png" in task.nodes_by_name["find_farm_entry"].templates
@@ -666,6 +690,61 @@ def test_mumu_launcher_ad_close_matches_current_fixture():
 
     assert any(result.found for result in results)
     assert node.next == "open_wzry"
+
+
+def test_wzry_resource_update_confirm_matches_fixture():
+    project_root = Path(__file__).parents[1]
+    task = load_task_definition(project_root / "tasks" / "wzry_farm.yaml")
+    node = task.nodes_by_name["confirm_resource_update_restart"]
+    fixture = cv2.imread(str(project_root / "tests" / "fixtures" / "wzry_resource_update_confirm.png"), cv2.IMREAD_COLOR)
+    assert fixture is not None
+
+    actual_size = RecognitionSize(width=fixture.shape[1], height=fixture.shape[0])
+    template_dir = project_root / "assets" / "templates"
+    template = cv2.imread(str(template_dir / node.template), cv2.IMREAD_COLOR)
+    assert template is not None
+    result = match_template(
+        fixture,
+        template,
+        threshold=node.threshold,
+        roi=Rect.from_sequence(node.roi),
+        recognition_size=RecognitionSize(width=1280, height=720),
+        actual_size=actual_size,
+    )
+
+    assert result.found
+    assert result.score >= 0.95
+    assert node.action == "tap_point"
+    assert node.point == [632, 510]
+    assert node.next == "wait_game_loading"
+
+
+def test_wzry_agreement_confirm_matches_fixture_and_stops_without_closing_game():
+    project_root = Path(__file__).parents[1]
+    task = load_task_definition(project_root / "tasks" / "wzry_farm.yaml")
+    node = task.nodes_by_name["confirm_agreement_stop"]
+    fixture = cv2.imread(str(project_root / "tests" / "fixtures" / "wzry_agreement_confirm_stop.png"), cv2.IMREAD_COLOR)
+    assert fixture is not None
+
+    actual_size = RecognitionSize(width=fixture.shape[1], height=fixture.shape[0])
+    template_dir = project_root / "assets" / "templates"
+    template = cv2.imread(str(template_dir / node.template), cv2.IMREAD_COLOR)
+    assert template is not None
+    result = match_template(
+        fixture,
+        template,
+        threshold=node.threshold,
+        roi=Rect.from_sequence(node.roi),
+        recognition_size=RecognitionSize(width=1280, height=720),
+        actual_size=actual_size,
+    )
+
+    assert result.found
+    assert result.score >= 0.95
+    assert node.action == "tap_point"
+    assert node.point == [765, 565]
+    assert node.next == "stop_keep_game_open"
+    assert task.nodes_by_name[node.next].keep_game_open_after_run is True
 
 
 def test_task_engine_dry_run_completes_without_sending_tap(tmp_path: Path):

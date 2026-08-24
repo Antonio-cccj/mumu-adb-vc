@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Callable, Literal
 
 import cv2
+import numpy as np
 
 from navigation.feature_localizer import FeatureLocalizer, LocalizationResult
 from navigation.route_config import NavigationRoute, RouteMove, TemplateGroup
@@ -56,6 +57,7 @@ class RouteNavigator:
         self._correction_offset = 0
         self._recovery_offset = 0
         self._fixed_step_started_at = time.monotonic()
+        self._template_cache: dict[str, np.ndarray | None] = {}
 
     def run(self, *, max_attempts: int) -> NavigationRunResult:
         for attempt in range(1, max_attempts + 1):
@@ -180,7 +182,9 @@ class RouteNavigator:
             "navigation",
             (
                 f"fixed_step {attempt}/{max_attempts}: "
-                f"decision=fixed_step, move={move}, wait_ms={self.route.fixed_step.step_wait_ms}"
+                f"decision=fixed_step, move={move}, wait_ms={self.route.fixed_step.step_wait_ms}, "
+                f"settle_wait_ms={self.route.fixed_step.settle_wait_ms}, "
+                f"poll_interval_ms={self.route.fixed_step.success_poll_interval_ms}"
             ),
             action="route_navigate",
             data={
@@ -190,12 +194,66 @@ class RouteNavigator:
                 "decision": "fixed_step",
                 "move": move,
                 "wait_ms": self.route.fixed_step.step_wait_ms,
+                "settle_wait_ms": self.route.fixed_step.settle_wait_ms,
+                "poll_interval_ms": self.route.fixed_step.success_poll_interval_ms,
             },
         )
         self._move_joystick(move, actual_size)
-        sleep_status = self.callbacks.sleep_ms(self.route.fixed_step.step_wait_ms)
-        if sleep_status == "stopped":
-            return NavigationRunResult("stopped", attempt, "stop requested")
+        return self._wait_fixed_step_window(attempt)
+
+    def _wait_fixed_step_window(self, attempt: int) -> NavigationRunResult | None:
+        total_wait_ms = self.route.fixed_step.step_wait_ms
+        if total_wait_ms <= 0:
+            return self._poll_fixed_step_templates(attempt, 0)
+
+        should_poll = bool(self.route.success.templates or self.route.interrupt.templates)
+        if not should_poll:
+            sleep_status = self.callbacks.sleep_ms(total_wait_ms)
+            if sleep_status == "stopped":
+                return NavigationRunResult("stopped", attempt, "stop requested")
+            return None
+
+        settle_wait_ms = min(self.route.fixed_step.settle_wait_ms, total_wait_ms)
+        if settle_wait_ms:
+            sleep_status = self.callbacks.sleep_ms(settle_wait_ms)
+            if sleep_status == "stopped":
+                return NavigationRunResult("stopped", attempt, "stop requested")
+        return self._poll_fixed_step_templates(attempt, total_wait_ms - settle_wait_ms)
+
+    def _poll_fixed_step_templates(self, attempt: int, window_ms: int) -> NavigationRunResult | None:
+        deadline = time.monotonic() + max(window_ms, 0) / 1000
+        first_check = True
+        while first_check or time.monotonic() < deadline:
+            first_check = False
+            if self.callbacks.stopped():
+                return NavigationRunResult("stopped", attempt, "stop requested")
+            screenshot = self.callbacks.screencap()
+            actual_size = RecognitionSize(width=screenshot.shape[1], height=screenshot.shape[0])
+            if self._handle_template_group(
+                screenshot,
+                actual_size,
+                self.route.interrupt,
+                purpose="interrupt",
+                attempt=attempt,
+                click=True,
+            ):
+                continue
+            if self._handle_template_group(
+                screenshot,
+                actual_size,
+                self.route.success,
+                purpose="success",
+                attempt=attempt,
+                click=False,
+            ):
+                return NavigationRunResult("success", attempt, "success template found")
+            remaining_ms = int((deadline - time.monotonic()) * 1000)
+            if remaining_ms <= 0:
+                break
+            sleep_ms = min(self.route.fixed_step.success_poll_interval_ms, remaining_ms)
+            sleep_status = self.callbacks.sleep_ms(sleep_ms)
+            if sleep_status == "stopped":
+                return NavigationRunResult("stopped", attempt, "stop requested")
         return None
 
     def _handle_template_group(
@@ -213,10 +271,8 @@ class RouteNavigator:
         best_name = None
         best_result = None
         for template_name in group.templates:
-            template_path = self._resolve_template_path(template_name)
-            template = cv2.imread(str(template_path), cv2.IMREAD_COLOR)
+            template = self._load_template(template_name)
             if template is None:
-                self.callbacks.emit("WARN", "template", f"route template unreadable: {template_name}", template=template_name)
                 continue
             result = match_template(
                 screenshot,
@@ -250,6 +306,20 @@ class RouteNavigator:
         if group.wait_ms:
             self.callbacks.sleep_ms(group.wait_ms)
         return True
+
+    def _load_template(self, template_name: str) -> np.ndarray | None:
+        if template_name not in self._template_cache:
+            template_path = self._resolve_template_path(template_name)
+            template = cv2.imread(str(template_path), cv2.IMREAD_COLOR)
+            self._template_cache[template_name] = template
+            if template is None:
+                self.callbacks.emit(
+                    "WARN",
+                    "template",
+                    f"route template unreadable: {template_name}",
+                    template=template_name,
+                )
+        return self._template_cache[template_name]
 
     def _select_move(self, localization: LocalizationResult) -> _MoveDecision:
         if localization.found and localization.index is not None:

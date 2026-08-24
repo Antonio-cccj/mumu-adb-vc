@@ -6,9 +6,12 @@ from client import (
     load_client_state,
     save_client_state,
     should_arm_manual_schedule,
+    should_close_game_after_run,
     should_trigger_schedule,
 )
 from runtime_events import EventLevel, RunEvent
+from settings import AppConfig
+from task_engine import EngineRunResult, TaskDefinition
 
 
 def _event(category: str, message: str, **kwargs) -> RunEvent:
@@ -113,3 +116,69 @@ def test_schedule_triggers_when_due_and_worker_idle():
         next_run_at=datetime(2026, 6, 16, 12, 54, 0),
         worker_alive=False,
     ) is True
+
+
+def test_client_keeps_game_open_when_terminal_node_requests_it():
+    task = TaskDefinition.model_validate(
+        {
+            "start": "stop_keep_game_open",
+            "nodes": [
+                {
+                    "name": "stop_keep_game_open",
+                    "action": "stop",
+                    "terminal_status": "stopped",
+                    "keep_game_open_after_run": True,
+                }
+            ],
+        }
+    )
+    result = EngineRunResult(
+        status="stopped",
+        steps=1,
+        last_node="stop_keep_game_open",
+        reason="Stop node reached",
+    )
+
+    assert (
+        should_close_game_after_run(
+            config=AppConfig(close_game_after_run=True),
+            task=task,
+            result=result,
+        )
+        is False
+    )
+
+
+def test_client_closes_game_for_normal_finished_run_when_enabled():
+    task = TaskDefinition.model_validate(
+        {
+            "start": "stop_success",
+            "nodes": [{"name": "stop_success", "action": "stop"}],
+        }
+    )
+    result = EngineRunResult(
+        status="completed",
+        steps=1,
+        last_node="stop_success",
+        reason="Stop node reached",
+    )
+
+    assert (
+        should_close_game_after_run(
+            config=AppConfig(close_game_after_run=True),
+            task=task,
+            result=result,
+        )
+        is True
+    )
+
+
+def test_client_respects_global_close_game_disabled():
+    assert (
+        should_close_game_after_run(
+            config=AppConfig(close_game_after_run=False),
+            task=None,
+            result=None,
+        )
+        is False
+    )

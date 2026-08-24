@@ -7,12 +7,14 @@ max_stuck_attempts: 8
 joystick:
   center: [184, 505]
   distance: 72
-  duration_ms: 280
+  duration_ms: 240
   wait_ms: 0
 
 fixed_step:
   direction: up_left
-  step_wait_ms: 8000
+  step_wait_ms: 1800
+  settle_wait_ms: 500
+  success_poll_interval_ms: 500
   reset_after_ms: 300000
 
 success:

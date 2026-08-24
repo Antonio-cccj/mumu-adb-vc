@@ -16,7 +16,7 @@ class AppConfig(BaseModel):
     device_serial: str | None = None
     recognition_width: int = Field(default=1280, gt=0)
     recognition_height: int = Field(default=720, gt=0)
-    screenshot_interval_ms: int = Field(default=1000, ge=50)
+    screenshot_interval_ms: int = Field(default=500, ge=50)
     debug_dir: Path = Path("debug")
     log_dir: Path = Path("logs")
     template_dir: Path = Path("assets/templates")

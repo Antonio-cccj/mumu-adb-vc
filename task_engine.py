@@ -204,6 +204,8 @@ class TaskNode(BaseModel):
     # 设为 true 时，stuck_recheck 机制不会在此节点上触发页面重判跳转，
     # 适合允许长时间重试但不希望被误判为"卡死"的节点（如 dismiss_reward_screen）。
     no_stuck_recheck: bool = False
+    # 设为 true 时，客户端任务收尾阶段会保留游戏运行。适合需要用户接手的合规弹窗。
+    keep_game_open_after_run: bool = False
 
     @field_validator("roi")
     @classmethod

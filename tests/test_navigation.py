@@ -52,6 +52,28 @@ keyframes:
     assert route.resolve_path("spawn.png") == tmp_path / "spawn.png"
 
 
+def test_fixed_step_route_accepts_fast_polling_settings(tmp_path: Path):
+    route = NavigationRoute.model_validate(
+        {
+            "name": "demo",
+            "mode": "fixed_step",
+            "fixed_step": {
+                "direction": "up_left",
+                "step_wait_ms": 1200,
+                "settle_wait_ms": 400,
+                "success_poll_interval_ms": 300,
+                "reset_after_ms": 300000,
+            },
+            "keyframes": [{"name": "anchor", "image": "anchor.png", "move": "wait", "min_score": 5}],
+        }
+    )
+    route.bind_base_dir(tmp_path)
+
+    assert route.fixed_step.step_wait_ms == 1200
+    assert route.fixed_step.settle_wait_ms == 400
+    assert route.fixed_step.success_poll_interval_ms == 300
+
+
 def test_feature_localizer_prefers_matching_keyframe(tmp_path: Path):
     spawn = _write_textured_image(tmp_path / "spawn.png", 1, (90, 120))
     near = _write_textured_image(tmp_path / "near.png", 2, (220, 100))
@@ -234,6 +256,120 @@ def test_route_navigator_fixed_step_moves_up_left_and_waits_each_step(tmp_path: 
     assert result.status == "failed"
     assert swipes == [(100, 200, 65, 165, 250), (100, 200, 65, 165, 250)]
     assert waits == [8000, 8000]
+
+
+def test_route_navigator_fixed_step_polls_success_after_move(tmp_path: Path):
+    ok = np.zeros((20, 20, 3), dtype=np.uint8)
+    cv2.line(ok, (2, 2), (17, 17), (255, 255, 255), 2)
+    cv2.line(ok, (17, 2), (2, 17), (0, 220, 255), 2)
+    cv2.rectangle(ok, (6, 6), (13, 13), (20, 80, 230), -1)
+    cv2.imwrite(str(tmp_path / "ok.png"), ok)
+    before = np.full((240, 320, 3), 20, dtype=np.uint8)
+    after = before.copy()
+    after[110:130, 230:250] = ok
+    frames = [before, after]
+    screenshots = 0
+
+    def screencap() -> np.ndarray:
+        nonlocal screenshots
+        screenshots += 1
+        index = min(screenshots - 1, len(frames) - 1)
+        return frames[index].copy()
+
+    route = NavigationRoute.model_validate(
+        {
+            "name": "demo",
+            "mode": "fixed_step",
+            "fixed_step": {
+                "direction": "up_left",
+                "step_wait_ms": 1200,
+                "settle_wait_ms": 400,
+                "success_poll_interval_ms": 400,
+                "reset_after_ms": 300000,
+            },
+            "success": {"templates": ["ok.png"], "threshold": 0.95, "roi": [200, 80, 100, 100], "wait_ms": 0},
+            "joystick": {"center": [100, 200], "distance": 50, "duration_ms": 250, "wait_ms": 0},
+            "keyframes": [{"name": "anchor", "image": "ok.png", "move": "wait", "min_score": 5}],
+        }
+    )
+    route.bind_base_dir(tmp_path)
+    swipes: list[tuple[int, int, int, int, int]] = []
+    waits: list[int] = []
+    callbacks = NavigationCallbacks(
+        screencap=screencap,
+        tap=lambda x, y: None,
+        swipe=lambda x1, y1, x2, y2, duration: swipes.append((x1, y1, x2, y2, duration)),
+        sleep_ms=lambda ms: waits.append(ms) or "success",
+        emit=lambda *args, **kwargs: None,
+        stopped=lambda: False,
+    )
+    config = AppConfig(
+        template_dir=tmp_path,
+        debug_dir=tmp_path / "debug",
+        recognition_width=320,
+        recognition_height=240,
+    )
+    navigator = RouteNavigator(route, config, callbacks)
+
+    result = navigator.run(max_attempts=3)
+
+    assert result.status == "success"
+    assert swipes == [(100, 200, 65, 165, 250)]
+    assert waits == [400]
+    assert screenshots == 2
+
+
+def test_route_navigator_caches_route_templates(tmp_path: Path, monkeypatch):
+    ok = np.zeros((20, 20, 3), dtype=np.uint8)
+    cv2.line(ok, (2, 2), (17, 17), (255, 255, 255), 2)
+    cv2.line(ok, (17, 2), (2, 17), (0, 220, 255), 2)
+    cv2.imwrite(str(tmp_path / "ok.png"), ok)
+    frame = np.full((240, 320, 3), 20, dtype=np.uint8)
+    route = NavigationRoute.model_validate(
+        {
+            "name": "demo",
+            "mode": "fixed_step",
+            "fixed_step": {
+                "direction": "up_left",
+                "step_wait_ms": 0,
+                "settle_wait_ms": 0,
+                "success_poll_interval_ms": 400,
+                "reset_after_ms": 300000,
+            },
+            "success": {"templates": ["ok.png"], "threshold": 0.95, "roi": [200, 80, 100, 100], "wait_ms": 0},
+            "joystick": {"center": [100, 200], "distance": 50, "duration_ms": 250, "wait_ms": 0},
+            "keyframes": [{"name": "anchor", "image": "ok.png", "move": "wait", "min_score": 5}],
+        }
+    )
+    route.bind_base_dir(tmp_path)
+    original_imread = cv2.imread
+    reads: list[str] = []
+
+    def counting_imread(path, flags=cv2.IMREAD_COLOR):
+        reads.append(Path(path).name)
+        return original_imread(path, flags)
+
+    callbacks = NavigationCallbacks(
+        screencap=lambda: frame.copy(),
+        tap=lambda x, y: None,
+        swipe=lambda x1, y1, x2, y2, duration: None,
+        sleep_ms=lambda ms: "success",
+        emit=lambda *args, **kwargs: None,
+        stopped=lambda: False,
+    )
+    config = AppConfig(
+        template_dir=tmp_path,
+        debug_dir=tmp_path / "debug",
+        recognition_width=320,
+        recognition_height=240,
+    )
+    navigator = RouteNavigator(route, config, callbacks)
+    monkeypatch.setattr("navigation.route_navigator.cv2.imread", counting_imread)
+
+    result = navigator.run(max_attempts=2)
+
+    assert result.status == "failed"
+    assert reads.count("ok.png") == 1
 
 
 def test_route_navigator_fixed_step_clicks_reset_after_timeout(tmp_path: Path):

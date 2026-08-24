@@ -7,6 +7,8 @@ emergency_stop: false
 auto_detect_start: true
 auto_detect_timeout_ms: 30000
 entry_nodes:
+  - confirm_resource_update_restart
+  - confirm_agreement_stop
   - close_popups
   - one_key_farm
   - wait_farm_loading
@@ -23,6 +25,8 @@ entry_nodes:
 # 单个节点循环过久时重新识别当前页面，防止卡在弹窗/加载/错误页面。
 stuck_recheck_after: 5
 stuck_recheck_nodes:
+  - confirm_resource_update_restart
+  - confirm_agreement_stop
   - close_popups
   - one_key_farm
   - wait_farm_loading
@@ -116,8 +120,42 @@ nodes:
     next: close_popups
     timeout_ms: 1200
     retry: 1
-    on_fail: find_farm_entry
+    on_fail: confirm_resource_update_restart
     post_action_wait_ms: 800
+
+  - name: confirm_resource_update_restart
+    display_name: 确认资源更新并重启
+    roi: [240, 260, 820, 180]
+    template: wzry/resource_update_confirm_dialog.png
+    threshold: 0.78
+    action: tap_point
+    point: [632, 510]
+    next: wait_game_loading
+    timeout_ms: 3000
+    retry: 2
+    on_fail: confirm_agreement_stop
+    post_action_wait_ms: 6000
+
+  - name: confirm_agreement_stop
+    display_name: 同意协议后停止
+    roi: [220, 80, 880, 180]
+    template: wzry/agreement_confirm_dialog.png
+    threshold: 0.78
+    action: tap_point
+    point: [765, 565]
+    next: stop_keep_game_open
+    timeout_ms: 3000
+    retry: 2
+    on_fail: find_farm_entry
+    post_action_wait_ms: 1000
+
+  - name: stop_keep_game_open
+    display_name: 已同意协议，停止脚本
+    action: stop
+    terminal_status: stopped
+    keep_game_open_after_run: true
+    timeout_ms: 1000
+    retry: 1
 
   - name: return_to_lobby
     display_name: 返回游戏主界面
